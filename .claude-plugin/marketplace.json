@@ -1,0 +1,12 @@
+{
+  "name": "agent-harness-plugins",
+  "owner": { "name": "NireBryce" },
+  "description": "Plugins for Claude Code's function-hooks plugin API",
+  "plugins": [
+    {
+      "name": "file-browser",
+      "source": "./plugins/file-browser",
+      "description": "A side pane that browses and previews the files in the session's working tree; open it with /files"
+    }
+  ]
+}

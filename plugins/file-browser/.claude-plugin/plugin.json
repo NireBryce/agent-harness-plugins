@@ -1,0 +1,7 @@
+{
+  "name": "file-browser",
+  "version": "0.1.0",
+  "description": "A side pane that browses and previews the files in the session's working tree; open it with /files",
+  "author": { "name": "NireBryce" },
+  "types": "./types/index.d.ts"
+}
