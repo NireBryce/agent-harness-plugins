@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { FsEntry } from 'claude-code'
+import type { FsEntry, RenderElement } from 'claude-code'
 
 // A small tree the test's own fs hooks answer from, beneath the plugin.
 const TREE: Record<string, FsEntry[]> = {
@@ -78,5 +78,27 @@ describe('file-browser', () => {
 
     expect(await ui.find({ type: 'Code' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Binary file/ })).toBeDefined()
+  })
+
+  test('draws the browser in the /files output row on mobile only', async ($, on) => {
+    on('fs.list', async () => ({
+      value: [{ name: 'README.md', kind: 'file' as const, size: 7, mtimeMs: 1, isLink: false }],
+    }))
+    // Stands in for the engine's own row, which the plugin passes on off mobile.
+    on('ui.render', async ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return h(Text, {}, 'engine row') as RenderElement
+    })
+    const ROW = {
+      component: 'CommandOutput',
+      props: { command: 'files', args: '', text: 'opened', isErrored: false },
+    } as const
+
+    const mobile = await $.ui.mount({ plugin: 'file-browser', surface: 'mobile', ...ROW })
+    expect(await mobile.find({ key: 'file:README.md' })).toBeDefined()
+
+    const desktop = await $.ui.mount({ plugin: 'file-browser', surface: 'desktop', ...ROW })
+    expect(await desktop.find({ key: 'file:README.md' })).toBeUndefined()
+    expect(await desktop.find({ type: 'Text', text: 'engine row' })).toBeDefined()
   })
 })

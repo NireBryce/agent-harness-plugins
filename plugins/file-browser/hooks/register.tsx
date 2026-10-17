@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, FsEntry, Register } from 'claude-code'
+import type { ElementTable, EngineInterface, FsEntry, Register } from 'claude-code'
 
 const PANE = 'file-browser'
 const TITLE = 'Files'
@@ -71,20 +71,118 @@ const loadPreview = async ($: EngineInterface, path: string): Promise<Preview> =
   return { text }
 }
 
+// The elements the browser draws with: every surface's table has these.
+type Elements = Pick<ElementTable, 'Box' | 'Text' | 'Button' | 'Code'>
+
+// The browser itself, drawn in the side pane where a surface places panes,
+// and in the /files command's output row on the mobile app, which places none.
+const drawBrowser = async ($: EngineInterface, { Box, Text, Button, Code }: Elements) => {
+  const shownDir = await read($, dir)
+  const shownFile = await read($, file)
+  const isHiddenShown = await read($, showHidden)
+
+  const goTo = (path: string) => update($, dir, () => path)
+  const openFile = (path: string) => update($, file, () => path)
+  const closeFile = () => update($, file, () => '')
+
+  if (shownFile !== '') {
+    const preview = await loadPreview($, shownFile).catch(
+      (error: unknown): Preview => ({ text: '', note: `Cannot read it: ${String(error)}` }),
+    )
+
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="row" gap={1}>
+          <Button key="back" hotkey="b" autoFocus onPress={() => void closeFile()}>
+            ← Back
+          </Button>
+          <Text weight="semibold" wrap="truncate-start">
+            {shownFile}
+          </Text>
+        </Box>
+        {preview.note !== undefined && <Text dimColor>{preview.note}</Text>}
+        {preview.text !== '' && <Code source={preview.text} path={shownFile} startLine={1} />}
+      </Box>
+    )
+  }
+
+  const listed = await listRows($, shownDir, isHiddenShown).then(
+    rows => ({ rows }),
+    (error: unknown) => ({ rows: [] as Row[], error: String(error) }),
+  )
+  const rows = listed.rows.slice(0, MAX_ENTRIES)
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        {shownDir !== '' && (
+          <Button key="up" hotkey="u" onPress={() => void goTo(parentOf(shownDir))}>
+            ↑ Up
+          </Button>
+        )}
+        <Button key="refresh" hotkey="r" onPress={() => $.ui.invalidate('ui.render')}>
+          Refresh
+        </Button>
+        <Button
+          key="hidden"
+          hotkey="h"
+          dimColor={!isHiddenShown}
+          onPress={() => void update($, showHidden, isShown => !isShown)}
+        >
+          {isHiddenShown ? 'Hide dotfiles' : 'Show dotfiles'}
+        </Button>
+      </Box>
+      <Text weight="semibold" wrap="truncate-start">
+        {shownDir === '' ? './' : `./${shownDir}/`}
+      </Text>
+      {'error' in listed && <Text color="error">Cannot list it: {listed.error}</Text>}
+      {!('error' in listed) && rows.length === 0 && <Text dimColor>Empty.</Text>}
+      <Box flexDirection="column">
+        {rows.map(row =>
+          row.isDir ? (
+            <Button
+              key={`dir:${row.name}`}
+              plain
+              onPress={() => void goTo(join(shownDir, row.name))}
+            >
+              📁 {row.name}/
+            </Button>
+          ) : (
+            <Button
+              key={`file:${row.name}`}
+              plain
+              onPress={() => void openFile(join(shownDir, row.name))}
+            >
+              {row.name} <Text dimColor>{formatSize(row.size)}</Text>
+            </Button>
+          ),
+        )}
+      </Box>
+      {listed.rows.length > rows.length && (
+        <Text dimColor>{listed.rows.length - rows.length} more not shown.</Text>
+      )}
+    </Box>
+  )
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'files',
-      description: 'Open a pane that browses the files in the working tree',
+      description: 'Browse the files in the working tree (a side pane; inline on mobile)',
     })
 
     return next(e)
   })
 
   on('command.run', { command: 'files' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE })
+    const { isPlaced } = await $.ui.open({ id: PANE, title: TITLE })
 
-    return { text: 'Files pane opened.' }
+    return {
+      text: isPlaced
+        ? 'Files pane opened.'
+        : 'No surface here places a side pane; the mobile app draws the browser in this row.',
+    }
   })
 
   on('tool.call', async ($, e, next) => {
@@ -94,93 +192,11 @@ export const register: Register = on => {
     return ran
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Code } = $.ui.resolve(e)
-    const shownDir = await read($, dir)
-    const shownFile = await read($, file)
-    const isHiddenShown = await read($, showHidden)
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) =>
+    drawBrowser($, $.ui.resolve(e)),
+  )
 
-    const goTo = (path: string) => update($, dir, () => path)
-    const openFile = (path: string) => update($, file, () => path)
-    const closeFile = () => update($, file, () => '')
-
-    if (shownFile !== '') {
-      const preview = await loadPreview($, shownFile).catch(
-        (error: unknown): Preview => ({ text: '', note: `Cannot read it: ${String(error)}` }),
-      )
-
-      return (
-        <Box flexDirection="column" gap={1}>
-          <Box flexDirection="row" gap={1}>
-            <Button key="back" hotkey="b" autoFocus onPress={() => void closeFile()}>
-              ← Back
-            </Button>
-            <Text weight="semibold" wrap="truncate-start">
-              {shownFile}
-            </Text>
-          </Box>
-          {preview.note !== undefined && <Text dimColor>{preview.note}</Text>}
-          {preview.text !== '' && <Code source={preview.text} path={shownFile} startLine={1} />}
-        </Box>
-      )
-    }
-
-    const listed = await listRows($, shownDir, isHiddenShown).then(
-      rows => ({ rows }),
-      (error: unknown) => ({ rows: [] as Row[], error: String(error) }),
-    )
-    const rows = listed.rows.slice(0, MAX_ENTRIES)
-
-    return (
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          {shownDir !== '' && (
-            <Button key="up" hotkey="u" onPress={() => void goTo(parentOf(shownDir))}>
-              ↑ Up
-            </Button>
-          )}
-          <Button key="refresh" hotkey="r" onPress={() => $.ui.invalidate('ui.render')}>
-            Refresh
-          </Button>
-          <Button
-            key="hidden"
-            hotkey="h"
-            dimColor={!isHiddenShown}
-            onPress={() => void update($, showHidden, isShown => !isShown)}
-          >
-            {isHiddenShown ? 'Hide dotfiles' : 'Show dotfiles'}
-          </Button>
-        </Box>
-        <Text weight="semibold" wrap="truncate-start">
-          {shownDir === '' ? './' : `./${shownDir}/`}
-        </Text>
-        {'error' in listed && <Text color="error">Cannot list it: {listed.error}</Text>}
-        {!('error' in listed) && rows.length === 0 && <Text dimColor>Empty.</Text>}
-        <Box flexDirection="column">
-          {rows.map(row =>
-            row.isDir ? (
-              <Button
-                key={`dir:${row.name}`}
-                plain
-                onPress={() => void goTo(join(shownDir, row.name))}
-              >
-                📁 {row.name}/
-              </Button>
-            ) : (
-              <Button
-                key={`file:${row.name}`}
-                plain
-                onPress={() => void openFile(join(shownDir, row.name))}
-              >
-                {row.name} <Text dimColor>{formatSize(row.size)}</Text>
-              </Button>
-            ),
-          )}
-        </Box>
-        {listed.rows.length > rows.length && (
-          <Text dimColor>{listed.rows.length - rows.length} more not shown.</Text>
-        )}
-      </Box>
-    )
-  })
+  on('ui.render', { component: 'CommandOutput', props: { command: 'files' } }, async ($, e, next) =>
+    e.surface === 'mobile' ? drawBrowser($, $.ui.resolve(e)) : next(e),
+  )
 }

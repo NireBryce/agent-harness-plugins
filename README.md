@@ -6,17 +6,17 @@ Plugins (mods) for Claude Code's function-hooks plugin API.
 
 ### file-browser
 
-A side pane that browses the files in the session's working directory.
+Browses the files in the session's working directory.
 
-- `/files` opens the pane.
+- `/files` opens a side pane on the desktop app and the terminal. The mobile app places
+  no side panes, so there the browser draws inline, in the `/files` output row.
 - Tap a folder to go into it, **↑ Up** to go back (never above the working directory).
 - Tap a file to preview it with syntax highlighting; **← Back** returns to the listing.
   Binary files and files over 4 MiB show a note instead; long files show their first 60,000 characters.
 - `.git` is never listed; dotfiles are hidden until **Show dotfiles**.
 - The listing redraws after Write, Edit and Bash tool calls, and on **Refresh**.
 
-Draws only elements every surface has, so it works in the mobile app as well as the
-desktop app and the terminal.
+Draws only elements every surface has (`Box`, `Text`, `Button`, `Code`).
 
 ## Install
 
